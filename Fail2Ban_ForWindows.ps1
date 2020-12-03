@@ -1,7 +1,7 @@
 ﻿# https://github.com/dm3942/Fail2Ban-For-Windows
 # dm3942
 
-$IPAddresses = @{}
+$IPAddresses = @{} # Cache known bad IP addresses
 
 $query = @"
 <QueryList>
@@ -23,12 +23,19 @@ $outbuff = ""
 $lastcleanup = Get-Date
 
 While (1) { # while (Get-Date) -lt $startTime.AddSeconds(20)) # run for 20 seconds
+    # Check for the latest event
     $avent = Get-WinEvent -FilterXml $query -MaxEvents 1
+
+    # If this event has the source IP address details
     if($avent.Properties.Count -gt 19) {
+
+        # Get source IP address from the Event
         $IPaddr = $avent.Properties[19].Value
+
+        # Try to create a firewall rule to block 
         try {
-            # Show IP Address 
-            $IPAddresses.Add($IPaddr,$IPaddr) 
+            $IPAddresses.Add($IPaddr,$IPaddr) # Raise except and jump to Catch if the IP address already exists.
+
             Write-Host -ForegroundColor Red "$IPaddr  New attacker, time to block. $(Get-Date)"
             Write-Host "    Creating rule"
 
@@ -43,8 +50,14 @@ While (1) { # while (Get-Date) -lt $startTime.AddSeconds(20)) # run for 20 secon
 
             # Create Firewall Rule
             if(-not $skipplocal) {
-                New-NetFirewallRule -Profile Any -DisplayName "Fail2Ban Block $(Get-Date (Get-Date) -UFormat '%Y%m%d%H%M%S') $IPaddr" -RemoteAddress $IPaddr -Enabled True -Direction Inbound -Action Block | % { Write-Host "    -> ", $_.DisplayName, "-", $_.Status }
-                Write-Host "    Rule created"
+                # Check existing rules
+                $existing = Get-NetFirewallRule -DisplayName "Fail2Ban Block*" | Get-NetFirewallAddressFilter |  Where-Object RemoteAddress -eq $IPaddr
+                If($existing.Count -eq 0) {
+                    New-NetFirewallRule -Profile Any -DisplayName "Fail2Ban Block $(Get-Date (Get-Date) -UFormat '%Y%m%d%H%M%S') $IPaddr" -RemoteAddress $IPaddr -Enabled True -Direction Inbound -Action Block | % { Write-Host "    -> ", $_.DisplayName, "-", $_.Status }
+                    Write-Host "    Rule created"
+                } else {
+                    Write-Host "    Rule already exists"
+                }
             }
         } catch [Exception] {
             # Show IP address
@@ -57,8 +70,9 @@ While (1) { # while (Get-Date) -lt $startTime.AddSeconds(20)) # run for 20 secon
     }
 
     # Every hour, clean up old rules
-    if ( ((Get-Date)-$lastcleanup).Hour -gt 1) 
+    if ( ((Get-Date)-$lastcleanup).Hour -gt 5) 
     {
+        $IPAddresses = @{} # Reset bad IP address cache
         Write-Host -ForegroundColor DarkGreen "Cleaning up old rules. $(Get-Date)"
         $yesterdays = Get-Date (Get-Date).AddDays(-1) -UFormat '%Y%m%d' 
         Get-NetFirewallRule -DisplayName "Fail2Ban Block $($yesterdays)*" | Remove-NetFirewallRule 
