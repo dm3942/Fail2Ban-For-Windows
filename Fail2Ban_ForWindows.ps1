@@ -23,6 +23,19 @@ function CleanUpOldRules() {
 
 CleanUpOldRules
 
+$query = @"
+    <QueryList>
+        <Query Id="0" Path="Security">
+        <Select Path="Security">*[System[Provider[@Name='Microsoft-Windows-Security-Auditing'] and 
+            (Task=12544) and 
+            (band(Keywords,4503599627370496)) and 
+            (EventID=4625) and 
+            TimeCreated[timediff(@SystemTime) &lt;= 3600000]]]
+        </Select>
+        </Query>
+    </QueryList>
+"@
+
 $startTime = Get-Date
 $lastIPaddr = "127.0.0.1"
 $lastEventCheck = (Get-Date).AddMinutes(-30) # Upon startup review the last 30 minutes of logs
@@ -34,28 +47,20 @@ While (1) { # while ( (Get-Date) -lt $startTime.AddSeconds(20)) # run for 20 sec
     #Write-Host -NoNewline "."
     try {
         # Check for the latest events
-        $query = @"
-            <QueryList>
-              <Query Id="0" Path="Security">
-                <Select Path="Security">*[System[Provider[@Name='Microsoft-Windows-Security-Auditing'] and 
-                   (Task=12544) and 
-                   (band(Keywords,4503599627370496)) and 
-                   (EventID=4625) and 
-                   TimeCreated[timediff(@SystemTime) &lt;= 3600000]]]
-                </Select>
-              </Query>
-            </QueryList>
-"@
-        $aevent = Get-WinEvent -FilterXml $query -ErrorAction SilentlyContinue | Where-Object TimeCreated -gt $lastEventCheck
+        $aevent = @()
+        $aevent += Get-WinEvent -FilterXml $query -ErrorAction SilentlyContinue #| Where-Object TimeCreated -gt $lastEventCheck
+        #$aevent.Count
         $createRule = $true
     } catch [Exception] {
-        Write-Host -ForegroundColor Green "No failed logon attempts found."
+        #Write-Host -ForegroundColor Green "No failed logon attempts found."
     }
     $lastEventCheck = Get-Date
 
+
     # If this event has the source IP address details
     if($createRule) {
-        foreach($avent in $aevent) {
+        $aevent | % {
+            $avent = $_ 
             if ($avent.Properties.Count -gt 19) {
                 # Get source IP address from the Event
                 $IPaddr = $avent.Properties[19].Value
@@ -93,11 +98,11 @@ While (1) { # while ( (Get-Date) -lt $startTime.AddSeconds(20)) # run for 20 sec
                     }
                 } catch [Exception] {
                     # Show IP address
-                    if($lastIPaddr -ne $IPaddr) {
-                        $lastIPaddr = $IPaddr
+                    #if($lastIPaddr -ne $IPaddr) {
+                    #    $lastIPaddr = $IPaddr
                         Write-Host -ForegroundColor Green "$IPaddr $userDomain\$userID $workstation. Event already processed. Firewall rule previously created/processed. $(Get-Date)"
                         Write-Host "    Event time: $($avent.TimeCreated)"
-                    }
+                    #}
                 }
             } else {
                 Write-Host -ForegroundColor Red "----------- !!ERROR!! ----------------- Missing Properties for rule creation. $(Get-Date)"
@@ -114,6 +119,18 @@ While (1) { # while ( (Get-Date) -lt $startTime.AddSeconds(20)) # run for 20 sec
         $lastcleanup = Get-Date
     }
 
-     Sleep -Milliseconds 1000
+    Sleep -Milliseconds 1000
+    $query = @"
+        <QueryList>
+            <Query Id="0" Path="Security">
+            <Select Path="Security">*[System[Provider[@Name='Microsoft-Windows-Security-Auditing'] and 
+                (Task=12544) and 
+                (band(Keywords,4503599627370496)) and 
+                (EventID=4625) and 
+                TimeCreated[timediff(@SystemTime) &lt;= 5000]]]
+            </Select>
+            </Query>
+        </QueryList>
+"@
 }
 
