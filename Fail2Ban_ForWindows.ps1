@@ -31,7 +31,7 @@ $IPAddresses = @{} # Cache known bad IP addresses
 
 While (1) { # while ( (Get-Date) -lt $startTime.AddSeconds(20)) # run for 20 seconds
     $createRule = $false
-    Write-Host -NoNewline "."
+    #Write-Host -NoNewline "."
     try {
         # Check for the latest events
         $query = @"
